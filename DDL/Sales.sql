@@ -7,15 +7,27 @@ CREATE TABLE sales_prj (
     status VARCHAR2(20)
 );
 
-INSERT /*+ APPEND */ INTO sales_prj
-SELECT LEVEL,
-       MOD(LEVEL,500000)+1,
-       MOD(LEVEL,50000)+1,
-       TRUNC(DBMS_RANDOM.VALUE(100,10000)),
-       SYSDATE - MOD(LEVEL,730),
-       CASE WHEN MOD(LEVEL,10)=0 THEN 'CANCELLED'
-            ELSE 'COMPLETED' END
-FROM dual CONNECT BY LEVEL <= 5000000;
+DECLARE
+  v_batch_size NUMBER := 100000;
+  v_total_rows NUMBER := 5000000;
+  v_start_id NUMBER := 1;
+BEGIN
+  FOR i IN 1..CEIL(v_total_rows / v_batch_size) LOOP
+    INSERT /*+ APPEND */ INTO sales_prj
+    SELECT v_start_id + LEVEL - 1,
+           MOD(v_start_id + LEVEL - 1, 500000) + 1,
+           MOD(v_start_id + LEVEL - 1, 50000) + 1,
+           TRUNC(DBMS_RANDOM.VALUE(100, 10000)),
+           SYSDATE - MOD(v_start_id + LEVEL - 1, 730),
+           CASE WHEN MOD(v_start_id + LEVEL - 1, 10) = 0 THEN 'CANCELLED'
+                ELSE 'COMPLETED' END
+    FROM dual CONNECT BY LEVEL <= LEAST(v_batch_size, v_total_rows - v_start_id + 1);
+    
+    v_start_id := v_start_id + v_batch_size;
+    COMMIT;
+  END LOOP;
+END;
+/
 
 COMMIT;
 
