@@ -10,7 +10,7 @@ SELECT LEVEL,
        'Customer ' || LEVEL,
        CASE WHEN MOD(LEVEL,4)=0 THEN 'Cairo'
             WHEN MOD(LEVEL,4)=1 THEN 'Alex'
-            WHEN MOD(LEVEL,4)=2 THEN Ismailia
+            WHEN MOD(LEVEL,4)=2 THEN 'Ismailia'
             ELSE 'Tanta' END,
        CASE WHEN MOD(LEVEL,3)=0 THEN 'RETAIL'
             WHEN MOD(LEVEL,3)=1 THEN 'CORPORATE'
