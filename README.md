@@ -99,13 +99,13 @@ WHERE sales_rank <= 5;
 
 | Metric | Recorded Value |
 |---|---|
-| **Elapsed Time (seconds)** | `___ sec` |
-| **CPU Time (seconds)** | `___ sec` |
-| **Disk Reads** | `___` |
-| **Buffer Gets (Logical Reads)** | `___` |
-| **Rows Processed** | `___` |
-| **Sorts** | `___` |
-| **Optimizer Cost** | `___` |
+| **Elapsed Time (seconds)** | `174.45 sec` |
+| **CPU Time (seconds)** | `60.53 sec` |
+| **Disk Reads** | `425585` |
+| **Buffer Gets (Logical Reads)** | `335876` |
+| **Rows Processed** | `20` |
+| **Sorts** | `3` |
+| **Optimizer Cost** | `104364` |
 | **Executions** | `___` |
 
 #### Queries Used to Capture These Values
@@ -217,8 +217,37 @@ SELECT * FROM TABLE(DBMS_XPLAN.DISPLAY);
 **Paste your estimated plan output below:**
 
 ```
-[ PASTE DBMS_XPLAN.DISPLAY OUTPUT HERE ]
+Plan hash value: 354816077
+
+--------------------------------------------------------------------------------------------------
+| Id  | Operation                | Name          | Rows  | Bytes |TempSpc| Cost (%CPU)| Time     |
+--------------------------------------------------------------------------------------------------
+|   0 | SELECT STATEMENT         |               |    31 |  2945 |       |   104K  (2)| 00:20:53 |
+|*  1 |  VIEW                    |               |    31 |  2945 |       |   104K  (2)| 00:20:53 |
+|*  2 |   WINDOW SORT PUSHED RANK|               |    31 |  2139 |       |   104K  (2)| 00:20:53 |
+|   3 |    WINDOW BUFFER         |               |    31 |  2139 |       |   104K  (2)| 00:20:53 |
+|   4 |     SORT GROUP BY        |               |    31 |  2139 |       |   104K  (2)| 00:20:53 |
+|*  5 |      HASH JOIN           |               |   447K|    29M|    24M|   104K  (2)| 00:20:52 |
+|*  6 |       HASH JOIN          |               |   447K|    19M|    11M| 86449   (3)| 00:17:18 |
+|   7 |        TABLE ACCESS FULL | PRODUCTS_PRJ  |   500K|  6347K|       |   619   (1)| 00:00:08 |
+|*  8 |        TABLE ACCESS FULL | SALES_PRJ     |   447K|    14M|       | 84278   (3)| 00:16:52 |
+|   9 |       TABLE ACCESS FULL  | CUSTOMERS_PRJ |  5000K|   109M|       |  8319   (1)| 00:01:40 |
+--------------------------------------------------------------------------------------------------
 ```
+
+Predicate Information (identified by operation id):
+---------------------------------------------------
+
+1 - filter("SALES_RANK"<=5)
+
+2 - filter(RANK() OVER ( PARTITION BY "C"."CITY" ORDER BY SUM("S"."AMOUNT") DESC )<=5)
+
+5 - access("C"."CUSTOMER_ID"="S"."CUSTOMER_ID")
+
+6 - access("S"."PRODUCT_ID"="P"."PRODUCT_ID")
+
+8 - filter("S"."STATUS"<>'CANCELLED' AND TO_CHAR(INTERNAL_FUNCTION("S"."SALE_DATE"),'YY
+YY')='2025')```
 
 ---
 
@@ -235,7 +264,8 @@ FROM (
            c.segment,
            SUM(s.amount) AS total_sales,
            RANK() OVER (PARTITION BY c.city ORDER BY SUM(s.amount) DESC) AS sales_rank,
-           AVG(SUM(s.amount)) OVER (PARTITION BY c.segment)              AS avg_segment_sales
+           AVG(SUM(s.amount)) OVER (PARTITION BY c.segment)              
+           AS avg_segment_sales
     FROM customers_prj c,
          sales_prj     s,
          products_prj  p
@@ -253,7 +283,59 @@ SELECT * FROM TABLE(DBMS_XPLAN.DISPLAY_CURSOR(NULL, NULL, 'ALLSTATS LAST'));
 **Paste your actual runtime plan output below:**
 
 ```
-[ PASTE DBMS_XPLAN.DISPLAY_CURSOR OUTPUT HERE ]
+SQL_ID  7n6phu9ra4rkb, child number 1
+-------------------------------------
+SELECT /*+ gather_plan_statistics */ * FROM (     
+  SELECT c.city,
+    p.category,            
+    c.segment,            
+    SUM(s.amount) AS
+    total_sales,            
+    RANK() OVER (PARTITION BY c.city ORDER BY
+    SUM(s.amount) DESC) AS sales_rank,
+    AVG(SUM(s.amount)) OVER
+    (PARTITION BY c.segment)              
+    AS avg_segment_sales     
+    FROM customers_prj c,          
+    sales_prj s,          
+    products_prj  p
+WHERE c.customer_id = s.customer_id       
+AND s.product_id  =
+p.product_id       
+AND TO_CHAR(s.sale_date, 'YYYY') = '2025'       
+AND s.status <> 'CANCELLED'     
+GROUP BY c.city, p.category, c.segment )
+WHERE sales_rank <= 5
+
+Plan hash value: 4200398583
+
+-----------------------------------------------------------------------------------------------------------------------------------------------------------
+| Id  | Operation                | Name          | Starts | E-Rows | A-Rows |   A-Time   | Buffers | Reads  | Writes |  OMem |  1Mem | Used-Mem | Used-Tmp|
+-----------------------------------------------------------------------------------------------------------------------------------------------------------
+|   0 | SELECT STATEMENT         |               |      1 |        |     20 |00:01:38.85 |     335K|    407K|  74679 |       |       |          |         |
+|*  1 |  VIEW                    |               |      1 |     31 |     20 |00:01:38.85 |     335K|    407K|  74679 |       |       |          |         |
+|*  2 |   WINDOW SORT PUSHED RANK|               |      1 |     31 |     24 |00:01:38.85 |     335K|    407K|  74679 |  6144 |  6144 | 6144  (0)|         |
+|   3 |    WINDOW BUFFER         |               |      1 |     31 |     54 |00:01:38.85 |     335K|    407K|  74679 |  4096 |  4096 | 4096  (0)|         |
+|   4 |     SORT GROUP BY        |               |      1 |     31 |     54 |00:01:38.85 |     335K|    407K|  74679 |  4096 |  4096 | 4096  (0)|         |
+|*  5 |      HASH JOIN           |               |      1 |     22M|     22M|00:01:17.99 |     335K|    407K|  74679 |   185M|  8752K|   73M (1)|     605K|
+|   6 |       TABLE ACCESS FULL  | CUSTOMERS_PRJ |      1 |   5000K|   5000K|00:00:04.99 |   29775 |  29765 |      0 |       |       |          |         |
+|*  7 |       HASH JOIN          |               |      1 |     22M|     22M|00:00:39.65 |     306K|    303K|     62 |    14M|  2367K|   20M (0)|         |
+|   8 |        TABLE ACCESS FULL | PRODUCTS_PRJ  |      1 |    500K|    500K|00:00:00.10 |    2265 |      0 |      0 |       |       |          |         |
+|*  9 |        TABLE ACCESS FULL | SALES_PRJ     |      1 |     22M|     22M|00:00:22.74 |     303K|    303K|      0 |       |       |          |         |
+-----------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Predicate Information (identified by operation id):
+---------------------------------------------------
+
+1 - filter("SALES_RANK"<=5)
+2 - filter(RANK() OVER ( PARTITION BY "C"."CITY" ORDER BY SUM("S"."AMOUNT") DESC )<=5)
+5 - access("C"."CUSTOMER_ID"="S"."CUSTOMER_ID")
+7 - access("S"."PRODUCT_ID"="P"."PRODUCT_ID")
+9 - filter(("S"."STATUS"<>'CANCELLED' AND TO_CHAR(INTERNAL_FUNCTION("S"."SALE_DATE"),'YYYY')='2025'))
+
+Note
+-----
+- cardinality feedback used for this statement
 ```
 
 ---
@@ -264,11 +346,11 @@ SELECT * FROM TABLE(DBMS_XPLAN.DISPLAY_CURSOR(NULL, NULL, 'ALLSTATS LAST'));
 
 | # | Problem | Where it shows up in the plan | Impact |
 |---|---|---|---|
-| 1 | `[ placeholder ]` | `[ placeholder ]` | `[ placeholder ]` |
-| 2 | `[ placeholder ]` | `[ placeholder ]` | `[ placeholder ]` |
-| 3 | `[ placeholder ]` | `[ placeholder ]` | `[ placeholder ]` |
-| 4 | `[ placeholder ]` | `[ placeholder ]` | `[ placeholder ]` |
-| 5 | `[ placeholder ]` | `[ placeholder ]` | `[ placeholder ]` |
+| 1 | `Function on indexed column (TO_CHAR(s.sale_date, 'YYYY'))` | `Step 9 – TABLE ACCESS FULL SALES_PRJ` | `Prevents index usage → forces full scan of 22M rows` |
+| 2 | `Full table scan on large fact table` | `Step 9 – TABLE ACCESS FULL SALES_PRJ` | `Reads 303K blocks → heavy I/O cost` |
+| 3 | `Huge hash join spilling to disk` | `Step 5 – HASH JOIN (Used-Tmp: 605K)` | `Temp space usage → slows execution significantly` |
+| 4 | `Late filtering (after scan, not before)` | `Step 9 filter applied after full scan` | `Processes unnecessary rows → wastes CPU & memory` |
+| 5 | `Expensive sorting for GROUP BY + WINDOW functions` | `Steps 2, 4 – SORT GROUP BY, WINDOW SORT` | `High memory usage + 74K writes → sorting overhead` |
 
 ---
 
@@ -279,7 +361,49 @@ SELECT * FROM TABLE(DBMS_XPLAN.DISPLAY_CURSOR(NULL, NULL, 'ALLSTATS LAST'));
 > Replace this placeholder with the final rewritten query after all changes are applied.
 
 ```sql
-[ PASTE OPTIMIZED QUERY HERE ]
+WITH filtered_sales AS (
+  SELECT
+         customer_id,
+         product_id,
+         amount
+  FROM   sales_prj
+  WHERE  status    = 'COMPLETED'
+    AND  sale_date >= DATE '2025-01-01'
+    AND  sale_date <  DATE '2026-01-01'
+),
+aggregated AS (
+  SELECT 
+         c.city,
+         p.category,
+         c.segment,
+         SUM(fs.amount) AS total_sales
+  FROM   products_prj  p
+  JOIN   filtered_sales fs ON fs.product_id = p.product_id
+  JOIN   customers_prj  c  ON c.customer_id = fs.customer_id
+  GROUP  BY c.city, p.category, c.segment
+),
+ranked AS (
+  SELECT city,
+         category,
+         segment,
+         total_sales,
+         RANK() OVER (
+           PARTITION BY city
+           ORDER BY total_sales DESC
+         ) AS sales_rank,
+         AVG(total_sales) OVER (
+           PARTITION BY segment
+         ) AS avg_segment_sales
+  FROM   aggregated
+)
+SELECT city,
+       category,
+       segment,
+       total_sales,
+       sales_rank,
+       avg_segment_sales
+FROM   ranked
+WHERE  sales_rank <= 5;
 ```
 
 ---
@@ -290,63 +414,97 @@ Each change below targets a specific root cause identified in Section 2.4.
 
 ---
 
-#### Change 1 — `[ Short title of the change ]`
+#### Change 1 — `Removed Non-SARGable Date Filter`
 
 **What was changed:**
-> `[ placeholder ]`
+> `TO_CHAR(s.sale_date,'YYYY') = '2025'`
+
+**To:**
+> `sale_date >= DATE '2025-01-01'
+AND sale_date <  DATE '2026-01-01'`
 
 **Why:**
-> `[ placeholder ]`
+> `The original expression applied a function (TO_CHAR) on the column, making it non-SARGable, which prevents index usage on sale_date.
+The new range predicate allows the optimizer to use indexes efficiently and reduces full table scans.`
 
 ---
 
-#### Change 2 — `[ Short title of the change ]`
+#### Change 2 — `Early Data Reduction Using CTE (filtered_sales)`
 
 **What was changed:**
-> `[ placeholder ]`
+> Introduced a CTE to filter rows before joins:
+
+WITH filtered_sales AS (
+    SELECT customer_id, product_id, amount
+    FROM sales_prj
+    WHERE ...
+)`
 
 **Why:**
-> `[ placeholder ]`
+> `Filtering early significantly reduces the number of rows participating in joins and aggregation.
+This lowers:
+I/O cost
+Join cost
+Memory usage
+This is especially important for large fact tables like sales_prj.`
 
 ---
 
-#### Change 3 — `[ Short title of the change ]`
+#### Change 3 — `Replaced status <> 'CANCELLED' with Positive Filter`
 
 **What was changed:**
-> `[ placeholder ]`
+> `status <> 'CANCELLED'`
+
+**To:**
+> `status = 'COMPLETED'`
 
 **Why:**
-> `[ placeholder ]`
+> `Inequality conditions (<>) are less selective and harder to optimize, often leading to full scans.
+Using an equality condition:
+Improves cardinality estimation
+Enables index usage on status
+Reduces unnecessary rows earlier in execution`
 
 ---
 
-#### Change 4 — `[ Short title of the change ]`
+#### Change 4 — `Separated Aggregation from Window Functions`
 
 **What was changed:**
-> `[ placeholder ]`
+> `Moved aggregation into its own CTE`
 
 **Why:**
-> `[ placeholder ]`
+> `By separating:
+Aggregation happens once
+Window functions operate on pre-aggregated data`
 
 ---
 
-#### Change 5 — `[ Short title of the change ]`
+#### Change 5 — `Converted Implicit Joins to Explicit JOIN Syntax`
 
 **What was changed:**
-> `[ placeholder ]`
+> `FROM customers_prj c, sales_prj s, products_prj p
+WHERE ...`
+
+**To:**
+> `FROM filtered_sales s
+JOIN customers_prj c ON ...
+JOIN products_prj p ON ...`
 
 **Why:**
-> `[ placeholder ]`
+> `Improve readability and maintainability
+Help the optimizer better understand join relationships
+Reduce risk of accidental Cartesian products`
 
 ---
 
-#### Change 6 — `[ Short title of the change ]`
+#### Change 6 — `Add Composite Index on SALES_PRJ (sale_date, status)`
 
 **What was changed:**
-> `[ placeholder ]`
+> `CREATE INDEX idx_sales_prj_date_status
+ON sales_prj (sale_date, status);`
 
 **Why:**
-> `[ placeholder ]`
+> `This index enables efficient filtering on the sale_date (range condition) and status columns, allowing Oracle to use an index range scan instead of a full table scan.`
 
 ---
 
