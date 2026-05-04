@@ -244,6 +244,20 @@ Predicate Information (identified by operation id):                             
               YY')='2025')                                                                        |
 ```
 
+Predicate Information (identified by operation id):
+---------------------------------------------------
+
+1 - filter("SALES_RANK"<=5)
+
+2 - filter(RANK() OVER ( PARTITION BY "C"."CITY" ORDER BY SUM("S"."AMOUNT") DESC )<=5)
+
+5 - access("C"."CUSTOMER_ID"="S"."CUSTOMER_ID")
+
+6 - access("S"."PRODUCT_ID"="P"."PRODUCT_ID")
+
+8 - filter("S"."STATUS"<>'CANCELLED' AND TO_CHAR(INTERNAL_FUNCTION("S"."SALE_DATE"),'YY
+YY')='2025')```
+
 ---
 
 #### Method B — Actual Runtime Plan (query executes fully)
@@ -259,7 +273,8 @@ FROM (
            c.segment,
            SUM(s.amount) AS total_sales,
            RANK() OVER (PARTITION BY c.city ORDER BY SUM(s.amount) DESC) AS sales_rank,
-           AVG(SUM(s.amount)) OVER (PARTITION BY c.segment)              AS avg_segment_sales
+           AVG(SUM(s.amount)) OVER (PARTITION BY c.segment)              
+           AS avg_segment_sales
     FROM customers_prj c,
          sales_prj     s,
          products_prj  p
