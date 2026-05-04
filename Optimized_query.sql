@@ -36,3 +36,24 @@ FROM (
 WHERE sales_rank <= 5;
 
 --SELECT * FROM TABLE(DBMS_XPLAN.DISPLAY);
+
+-- Gathering Stats
+
+BEGIN
+    DBMS_STATS.GATHER_TABLE_STATS(
+        ownname    => USER,
+        tabname    => 'SALES_PRJ',
+        method_opt => 'FOR ALL COLUMNS SIZE AUTO',
+        cascade    => TRUE
+    );
+END;
+/
+
+BEGIN
+    DBMS_STATS.GATHER_TABLE_STATS(USER, 'CUSTOMERS_PRJ', cascade => TRUE);
+    DBMS_STATS.GATHER_TABLE_STATS(USER, 'PRODUCTS_PRJ', cascade => TRUE);
+END;
+/
+
+CREATE INDEX idx_sales_prj_date_status
+ON sales_prj (sale_date, status);

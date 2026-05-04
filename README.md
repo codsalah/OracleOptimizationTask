@@ -239,9 +239,13 @@ Predicate Information (identified by operation id):
 ---------------------------------------------------
 
 1 - filter("SALES_RANK"<=5)
+
 2 - filter(RANK() OVER ( PARTITION BY "C"."CITY" ORDER BY SUM("S"."AMOUNT") DESC )<=5)
+
 5 - access("C"."CUSTOMER_ID"="S"."CUSTOMER_ID")
+
 6 - access("S"."PRODUCT_ID"="P"."PRODUCT_ID")
+
 8 - filter("S"."STATUS"<>'CANCELLED' AND TO_CHAR(INTERNAL_FUNCTION("S"."SALE_DATE"),'YY
 YY')='2025')```
 
@@ -260,7 +264,8 @@ FROM (
            c.segment,
            SUM(s.amount) AS total_sales,
            RANK() OVER (PARTITION BY c.city ORDER BY SUM(s.amount) DESC) AS sales_rank,
-           AVG(SUM(s.amount)) OVER (PARTITION BY c.segment)              AS avg_segment_sales
+           AVG(SUM(s.amount)) OVER (PARTITION BY c.segment)              
+           AS avg_segment_sales
     FROM customers_prj c,
          sales_prj     s,
          products_prj  p
@@ -280,15 +285,26 @@ SELECT * FROM TABLE(DBMS_XPLAN.DISPLAY_CURSOR(NULL, NULL, 'ALLSTATS LAST'));
 ```
 SQL_ID  7n6phu9ra4rkb, child number 1
 -------------------------------------
-SELECT /*+ gather_plan_statistics */ * FROM (     SELECT c.city,
-p.category,            c.segment,            SUM(s.amount) AS
-total_sales,            RANK() OVER (PARTITION BY c.city ORDER BY
-SUM(s.amount) DESC) AS sales_rank,            AVG(SUM(s.amount)) OVER
-(PARTITION BY c.segment)              AS avg_segment_sales     FROM
-customers_prj c,          sales_prj     s,          products_prj  p
-WHERE c.customer_id = s.customer_id       AND s.product_id  =
-p.product_id       AND TO_CHAR(s.sale_date, 'YYYY') = '2025'       AND
-s.status <> 'CANCELLED'     GROUP BY c.city, p.category, c.segment )
+SELECT /*+ gather_plan_statistics */ * FROM (     
+  SELECT c.city,
+    p.category,            
+    c.segment,            
+    SUM(s.amount) AS
+    total_sales,            
+    RANK() OVER (PARTITION BY c.city ORDER BY
+    SUM(s.amount) DESC) AS sales_rank,
+    AVG(SUM(s.amount)) OVER
+    (PARTITION BY c.segment)              
+    AS avg_segment_sales     
+    FROM customers_prj c,          
+    sales_prj s,          
+    products_prj  p
+WHERE c.customer_id = s.customer_id       
+AND s.product_id  =
+p.product_id       
+AND TO_CHAR(s.sale_date, 'YYYY') = '2025'       
+AND s.status <> 'CANCELLED'     
+GROUP BY c.city, p.category, c.segment )
 WHERE sales_rank <= 5
 
 Plan hash value: 4200398583
@@ -346,41 +362,48 @@ Note
 
 ```sql
 WITH filtered_sales AS (
-    SELECT customer_id, product_id, amount
-    FROM sales_prj
-    WHERE sale_date >= DATE '2025-01-01'
-      AND sale_date < DATE '2026-01-01'
-      AND status = 'COMPLETED'
+  SELECT
+         customer_id,
+         product_id,
+         amount
+  FROM   sales_prj
+  WHERE  status    = 'COMPLETED'
+    AND  sale_date >= DATE '2025-01-01'
+    AND  sale_date <  DATE '2026-01-01'
 ),
 aggregated AS (
-    SELECT c.city,
-           p.category,
-           c.segment,
-           SUM(s.amount) AS total_sales
-    FROM filtered_sales s
-    JOIN customers_prj c 
-        ON c.customer_id = s.customer_id
-    JOIN products_prj p 
-        ON p.product_id = s.product_id
-    GROUP BY c.city, p.category, c.segment
+  SELECT 
+         c.city,
+         p.category,
+         c.segment,
+         SUM(fs.amount) AS total_sales
+  FROM   products_prj  p
+  JOIN   filtered_sales fs ON fs.product_id = p.product_id
+  JOIN   customers_prj  c  ON c.customer_id = fs.customer_id
+  GROUP  BY c.city, p.category, c.segment
+),
+ranked AS (
+  SELECT city,
+         category,
+         segment,
+         total_sales,
+         RANK() OVER (
+           PARTITION BY city
+           ORDER BY total_sales DESC
+         ) AS sales_rank,
+         AVG(total_sales) OVER (
+           PARTITION BY segment
+         ) AS avg_segment_sales
+  FROM   aggregated
 )
-SELECT city, category, segment, total_sales, sales_rank, avg_segment_sales
-FROM (
-    SELECT city,
-           category,
-           segment,
-           total_sales,
-           RANK() OVER (
-               PARTITION BY city
-               ORDER BY total_sales DESC
-           ) AS sales_rank,
-           AVG(total_sales) OVER (
-               PARTITION BY segment
-           ) AS avg_segment_sales
-    FROM aggregated
-)
-WHERE sales_rank <= 5;
-
+SELECT city,
+       category,
+       segment,
+       total_sales,
+       sales_rank,
+       avg_segment_sales
+FROM   ranked
+WHERE  sales_rank <= 5;
 ```
 
 ---
@@ -471,6 +494,17 @@ JOIN products_prj p ON ...`
 > `Improve readability and maintainability
 Help the optimizer better understand join relationships
 Reduce risk of accidental Cartesian products`
+
+---
+
+#### Change 6 — `Add Composite Index on SALES_PRJ (sale_date, status)`
+
+**What was changed:**
+> `CREATE INDEX idx_sales_prj_date_status
+ON sales_prj (sale_date, status);`
+
+**Why:**
+> `This index enables efficient filtering on the sale_date (range condition) and status columns, allowing Oracle to use an index range scan instead of a full table scan.`
 
 ---
 
