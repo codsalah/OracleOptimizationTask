@@ -585,8 +585,49 @@ Predicate Information (identified by operation id):                             
 > Run the optimized query with the hint and capture the actual plan. This is what you compare directly against the original Method B output from Section 2.3.
 
 ```sql
-SELECT /*+ gather_plan_statistics */
-[ PASTE OPTIMIZED QUERY BODY HERE ];
+WITH filtered_sales AS (
+  SELECT /*+ gather_plan_statistics parallel(sales_prj, 4) */
+         customer_id,
+         product_id,
+         amount
+  FROM   sales_prj
+  WHERE  status    = 'COMPLETED'
+    AND  sale_date >= DATE '2025-01-01'
+    AND  sale_date <  DATE '2026-01-01'
+),
+aggregated AS (
+  SELECT c.city,
+         p.category,
+         c.segment,
+         SUM(fs.amount) AS total_sales
+  FROM   filtered_sales fs
+  JOIN   products_prj   p ON p.product_id  = fs.product_id
+  JOIN   customers_prj  c ON c.customer_id = fs.customer_id
+  GROUP  BY c.city, p.category, c.segment
+),
+ranked AS (
+  SELECT city,
+         category,
+         segment,
+         total_sales,
+         RANK() OVER (
+           PARTITION BY city
+           ORDER BY total_sales DESC
+         ) AS sales_rank,
+         AVG(total_sales) OVER (
+           PARTITION BY segment
+         ) AS avg_segment_sales
+  FROM   aggregated
+)
+SELECT city,
+       category,
+       segment,
+       total_sales,
+       sales_rank,
+       avg_segment_sales
+FROM   ranked
+WHERE  sales_rank <= 5;
+
 
 SELECT * FROM TABLE(DBMS_XPLAN.DISPLAY_CURSOR(NULL, NULL, 'ALLSTATS LAST'));
 ```
